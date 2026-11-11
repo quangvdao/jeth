@@ -8,8 +8,10 @@
 //! skips the body and reads the tape in call order.
 //!
 //! Build matrix:
-//! - riscv64 + `compute_advice` (pass-1 ELF): body runs, value written to tape.
-//! - riscv64, no `compute_advice` (proven ELF): 1-row `ADVICE_LD` read.
+//! - riscv64 + `advice-tape` + `compute_advice`: body runs, value written to tape.
+//! - riscv64 + `advice-tape`, no `compute_advice`: 1-row `ADVICE_LD` read.
+//! - `portable`: body runs directly on every target, including with `advice-tape`.
+//! - riscv64 without `portable` or `advice-tape`: rejected at compile time.
 //! - native (host / run-native gate): body runs directly, tape-free — the
 //!   native gate exercises identical logic.
 //!
@@ -23,17 +25,31 @@
 /// `#[cfg(feature = "compute_advice")]`).
 macro_rules! advice_u64 {
     ($body:expr) => {{
-        #[cfg(all(target_arch = "riscv64", feature = "compute_advice"))]
+        #[cfg(all(
+            target_arch = "riscv64",
+            feature = "advice-tape",
+            not(feature = "portable"),
+            feature = "compute_advice"
+        ))]
         {
             let v: u64 = $body;
             jolt::AdviceWriter::get().write_u64(v);
             v
         }
-        #[cfg(all(target_arch = "riscv64", not(feature = "compute_advice")))]
+        #[cfg(all(
+            target_arch = "riscv64",
+            feature = "advice-tape",
+            not(feature = "portable"),
+            not(feature = "compute_advice")
+        ))]
         {
             jolt::AdviceReader::get().read_u64()
         }
-        #[cfg(not(target_arch = "riscv64"))]
+        #[cfg(not(all(
+            target_arch = "riscv64",
+            feature = "advice-tape",
+            not(feature = "portable")
+        )))]
         {
             $body
         }
@@ -45,11 +61,19 @@ macro_rules! advice_u64 {
 /// natively. Both operands must fit in registers.
 macro_rules! advice_assert_eq {
     ($a:expr, $b:expr) => {{
-        #[cfg(target_arch = "riscv64")]
+        #[cfg(all(
+            target_arch = "riscv64",
+            feature = "advice-tape",
+            not(feature = "portable")
+        ))]
         {
             jolt::check_advice_eq!($a, $b)
         }
-        #[cfg(not(target_arch = "riscv64"))]
+        #[cfg(not(all(
+            target_arch = "riscv64",
+            feature = "advice-tape",
+            not(feature = "portable")
+        )))]
         {
             assert_eq!($a, $b)
         }
@@ -63,7 +87,11 @@ pub(crate) use {advice_assert_eq, advice_u64};
 /// use, exported as C symbols and marked for inlining so LTO can fold them into
 /// the zeth-mpt call sites. Gated like the macros, so a compute/proven feature
 /// mismatch between the two crates fails to link instead of misreading the tape.
-#[cfg(target_arch = "riscv64")]
+#[cfg(all(
+    target_arch = "riscv64",
+    feature = "advice-tape",
+    not(feature = "portable")
+))]
 mod hooks {
     #[cfg(feature = "compute_advice")]
     #[no_mangle]

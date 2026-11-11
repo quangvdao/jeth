@@ -7,6 +7,12 @@
 
 #![no_std]
 
+#[cfg(all(
+    target_arch = "riscv64",
+    not(any(feature = "portable", feature = "advice-tape"))
+))]
+compile_error!("riscv64 builds require either the portable or advice-tape feature");
+
 extern crate alloc;
 
 pub mod advice;
@@ -26,6 +32,16 @@ mod instrument;
 mod keccak_memo;
 #[cfg(any(all(feature = "p256-inline", target_arch = "riscv64"), test))]
 mod p256;
+#[cfg(any(
+    all(
+        feature = "portable",
+        target_arch = "riscv64",
+        target_os = "none",
+        not(target_feature = "a")
+    ),
+    test
+))]
+mod portable_atomic;
 #[cfg(feature = "premeasure")]
 pub mod premeasure;
 mod recover;

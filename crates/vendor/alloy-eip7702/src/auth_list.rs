@@ -262,7 +262,7 @@ impl Encodable for SignedAuthorization {
 // success, 0 on recovery failure. Measured: software k256 costs ~1.5M trace
 // rows per authorization vs ~230k for the inline (block 25698070 spent 396M
 // rows / 16% of the block here).
-#[cfg(target_arch = "riscv64")]
+#[cfg(all(target_arch = "riscv64", feature = "jolt-inline"))]
 unsafe extern "C" {
     fn jeth_ecrecover_prehash(sig: *const u8, recid: u8, msg: *const u8, out: *mut u8) -> u8;
 }
@@ -285,7 +285,7 @@ impl SignedAuthorization {
         // inline. `y_parity <= 1` is guaranteed by `signature()` above; the
         // high-s check matches upstream. The inline mirrors k256's acceptance
         // set exactly (r/s canonical nonzero, on-curve R, identity -> failure).
-        #[cfg(target_arch = "riscv64")]
+        #[cfg(all(target_arch = "riscv64", feature = "jolt-inline"))]
         {
             let mut sig = [0u8; 64];
             sig[..32].copy_from_slice(&signature.r().to_be_bytes::<32>());
@@ -308,7 +308,7 @@ impl SignedAuthorization {
             return Ok(Address::from_slice(&out[12..]));
         }
 
-        #[cfg(not(target_arch = "riscv64"))]
+        #[cfg(not(all(target_arch = "riscv64", feature = "jolt-inline")))]
         Ok(signature.recover_address_from_prehash(&self.inner.signature_hash())?)
     }
 

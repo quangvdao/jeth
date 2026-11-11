@@ -22,15 +22,22 @@ license = "Apache-2.0"
 [workspace]
 
 [dependencies]
-alloy-trie = { version = "0.9", default-features = false, features = ["ethereum"] }
+alloy-trie = { version = "0.9", default-features = false, features = [
+  "ethereum",
+] }
 alloy-rlp = { version = "0.3.8", default-features = false }
-alloy-primitives = { version = "1.5", default-features = false, features = ["map-foldhash", "map-indexmap"] }
+alloy-primitives = { version = "1.5", default-features = false, features = [
+  "map-foldhash",
+  "map-indexmap",
+] }
 
 # Inert feature names (upstream cfg_attr gates reference them; never enabled).
 [features]
 # Advice two-pass, pass-1 build (arena-encoder length advice). The cfg
 # resolves in the defining crate; jeth-core forwards it.
 compute_advice = []
+# Execute arena sizing directly on single-pass portable guests.
+portable = []
 # Resolver probe/hit/decode counters (native runs only; never in guest builds).
 premeasure = []
 serde = []

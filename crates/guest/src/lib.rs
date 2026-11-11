@@ -9,7 +9,7 @@
 //! < 4 GiB (cycle-marker pointers truncate to u32).
 //! KEEP IN SYNC with `GUEST_MEMORY` in `crates/host/src/trace.rs`.
 
-#![cfg_attr(feature = "guest", no_std)]
+#![cfg_attr(any(feature = "guest", feature = "portable"), no_std)]
 
 extern crate alloc;
 
@@ -21,7 +21,18 @@ mod keccak;
 #[cfg(feature = "guest")]
 mod mem;
 
+#[cfg(feature = "jolt-runtime")]
 use jeth_core::{BlockInput, ValidationResult};
+
+/// Validate JEF input with software cryptography and direct witness lookup.
+/// The input backing allocation must remain valid throughout validation.
+#[cfg(feature = "portable")]
+pub fn validate_portable(bytes: &'static [u8]) -> jeth_core::ValidationResult {
+    let input = jeth_core::decode_container(bytes).expect("JEF input");
+    let recovered =
+        jeth_core::recover_block(input.block, input.signers).expect("signature verification");
+    jeth_core::validate_recovered(recovered, input.witness).expect("stateless validation")
+}
 
 /// Print keccak counters with a phase label (census builds only).
 #[cfg(all(feature = "guest", feature = "keccak-census"))]
@@ -37,10 +48,14 @@ fn keccak_stats(label: &str) {
         );
     }
 }
-#[cfg(not(all(feature = "guest", feature = "keccak-census")))]
+#[cfg(all(
+    feature = "jolt-runtime",
+    not(all(feature = "guest", feature = "keccak-census"))
+))]
 fn keccak_stats(_label: &str) {}
 
 /// Shared body: read JEF (measured), verify signatures, validate statelessly.
+#[cfg(feature = "jolt-runtime")]
 fn run_validation(bytes: &[u8]) -> ValidationResult {
     // Advice-tape alignment sentinel: panics immediately on a missing tape or
     // mismatched compute/proven ELF pair (~6 rows).
@@ -75,6 +90,7 @@ fn run_validation(bytes: &[u8]) -> ValidationResult {
 }
 
 /// Standard path: JEF arrives as committed input, borrowed from the input region.
+#[cfg(feature = "jolt-runtime")]
 #[jolt::provable(
     max_input_size = 134217728,  // 128 MiB (multi-block synthetic inputs reach 90 MB at 19 blocks)
     max_output_size = 4096,      // 4 KiB
@@ -90,6 +106,7 @@ fn validate_block(input: &[u8]) -> ValidationResult {
 /// for the witness because the guest verifies it against the parent state root
 /// (and the block/pubkeys against the header hash + signatures) regardless of
 /// which stream carried the bytes.
+#[cfg(feature = "jolt-runtime")]
 #[jolt::provable(
     max_input_size = 4096,
     max_output_size = 4096,
@@ -110,6 +127,7 @@ fn validate_block_advice(input: jolt::TrustedAdvice<&[u8]>) -> ValidationResult 
 ///
 /// Blob layout: u32 LE state-digest count, then that many 32-byte digests,
 /// then 32-byte code hashes for every witness code entry.
+#[cfg(feature = "jolt-runtime")]
 #[jolt::provable(
     max_input_size = 134217728,         // 128 MiB
     max_output_size = 4096,
@@ -229,9 +247,9 @@ pub unsafe extern "C" fn jeth_ecrecover_prehash(
 
 /// Hook for the vendored revm-interpreter's MULMOD: `(a * b) % m` through the
 /// Jolt BIGINT256_MUL inline, remainder written over `m` (the top-of-stack
-/// word). Zero when `m` is zero. Unconditional because Cargo.toml enables the
-/// interpreter's `bigint-inline` feature (which emits the extern declaration)
-/// in every configuration of this crate.
+/// word). Zero when `m` is zero. The `jolt-runtime` feature enables the
+/// interpreter's `bigint-inline` feature, which emits the extern declaration.
+#[cfg(feature = "jolt-runtime")]
 #[no_mangle]
 pub unsafe extern "C" fn jeth_mul_mod(a: *const u64, b: *const u64, m: *mut u64) {
     use alloy_primitives::U256;

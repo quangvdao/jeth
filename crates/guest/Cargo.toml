@@ -3,15 +3,34 @@ name = "jeth-guest"
 version = "0.1.0"
 edition = "2021"
 
-# Standalone package (NOT part of the jeth workspace): built exclusively via the
-# `jolt` CLI for riscv64imac-unknown-none-elf with `--features guest`. Keeping it
-# out of the workspace isolates guest-only feature choices (alloy native-keccak)
-# from native host builds.
+# Standalone package: the original guest uses the Jolt CLI with `--features guest`.
+# The portable library uses `--no-default-features --features portable` and lets
+# its embedding runtime supply the entry point, allocator, and device IO.
+# Isolation keeps guest-only crypto choices out of native host builds.
 [workspace]
 
 [features]
-default = ["keccak-census"]
-guest = ["jeth-core/code-library"]
+default = ["keccak-census", "jolt-runtime"]
+guest = ["jeth-core/code-library", "jolt-runtime"]
+# Portable library entry point; select with --no-default-features.
+portable = ["jeth-core/portable", "jeth-core/code-library"]
+jolt-runtime = [
+  "dep:jolt",
+  "dep:jolt-inlines-keccak256",
+  "dep:revm-interpreter",
+  "dep:alloy-eip7702",
+  "alloy-primitives/native-keccak",
+  "jeth-core/advice-tape",
+  "jeth-core/secp-inline",
+  "jeth-core/sha2-inline",
+  "jeth-core/blake2-inline",
+  "jeth-core/blake2f-inline",
+  "jeth-core/p256-inline",
+  "jeth-core/bigint-inline",
+  "jeth-core/bn254-inline",
+  "jeth-core/bls12-381-inline",
+  "jeth-core/guest-instrument",
+]
 # Keccak census: per-call counters + `keccak[phase]` println lines in the
 # normal `jeth trace` output (the `perms=` count is a campaign gate). Costs
 # 21 rows per keccak call; `--no-default-features` drops it.
@@ -25,18 +44,22 @@ lazy = ["jeth-core/lazy-analysis"]
 compute_advice = ["jeth-core/compute_advice"]
 
 [dependencies]
-jolt = { package = "jolt-sdk", git = "https://github.com/a16z/jolt", rev = "8e536f199735ac8187156aa589ed1387722a079a" }
-jolt-inlines-keccak256 = { git = "https://github.com/a16z/jolt", rev = "8e536f199735ac8187156aa589ed1387722a079a", default-features = false }
+jolt = { package = "jolt-sdk", git = "https://github.com/a16z/jolt", rev = "8e536f199735ac8187156aa589ed1387722a079a", optional = true }
+jolt-inlines-keccak256 = { git = "https://github.com/a16z/jolt", rev = "8e536f199735ac8187156aa589ed1387722a079a", default-features = false, optional = true }
 
-jeth-core = { path = "../core", features = ["secp-inline", "sha2-inline", "blake2-inline", "blake2f-inline", "p256-inline", "bigint-inline", "bn254-inline", "bls12-381-inline", "guest-instrument"] }
+jeth-core = { path = "../core", default-features = false }
+alloy-eip7702 = { version = "0.6.3", default-features = false, features = [
+  "jolt-inline",
+], optional = true }
 # Direct dependency only to reach the vendored crate's `bigint-inline` feature:
-# EVM MULMOD through the `jeth_mul_mod` hook in lib.rs (always on, like the
-# jeth-core inline features above).
-revm-interpreter = { version = "35.0.1", default-features = false, features = ["bigint-inline"] }
+# EVM MULMOD through the `jeth_mul_mod` hook in lib.rs in Jolt runtime builds.
+revm-interpreter = { version = "35.0.1", default-features = false, features = [
+  "bigint-inline",
+], optional = true }
 
 # `native-keccak` routes every alloy keccak256 call (trie hashing, tx hashing, EVM
 # KECCAK256 opcode, address derivation) to our `native_keccak256` shim → Jolt inline.
-alloy-primitives = { version = "1.5", default-features = false, features = ["native-keccak"] }
+alloy-primitives = { version = "1.5", default-features = false }
 
 # once_cell(critical-section) inside reth-primitives-traits needs a provider on
 # bare metal; the Jolt guest is single-hart with no interrupts → no-op impl.
@@ -90,5 +113,6 @@ bench = false
 [[bin]]
 name = "jeth-guest"
 path = "src/main.rs"
+required-features = ["jolt-runtime"]
 test = false
 bench = false

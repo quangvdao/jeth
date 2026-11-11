@@ -1678,6 +1678,7 @@ dependencies = [
 name = "jeth-guest"
 version = "0.1.0"
 dependencies = [
+ "alloy-eip7702",
  "alloy-primitives",
  "critical-section",
  "jeth-core",

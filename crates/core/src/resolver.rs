@@ -82,7 +82,12 @@ pub struct WitnessResolver {
     /// Pass-1 / native digest→slot index. `BTreeMap` by the seed-chain rule:
     /// a pass-1-only foldhash map would perturb the global per-hasher seed
     /// chain relative to the proven ELF. Never built in the proven ELF.
-    #[cfg(any(feature = "compute_advice", not(target_arch = "riscv64")))]
+    #[cfg(any(
+        feature = "portable",
+        not(feature = "advice-tape"),
+        feature = "compute_advice",
+        not(target_arch = "riscv64")
+    ))]
     index: alloc::collections::BTreeMap<B256, u32>,
 }
 
@@ -121,7 +126,12 @@ impl WitnessResolver {
             verified,
             verified_set,
             kinds: alloc::vec![0u64; n.div_ceil(32)],
-            #[cfg(any(feature = "compute_advice", not(target_arch = "riscv64")))]
+            #[cfg(any(
+                feature = "portable",
+                not(feature = "advice-tape"),
+                feature = "compute_advice",
+                not(target_arch = "riscv64")
+            ))]
             index: witness_state
                 .iter()
                 .enumerate()
@@ -131,7 +141,12 @@ impl WitnessResolver {
     }
 
     /// Pass-1 / native body: digest → slot+1, or 0 = "not in witness".
-    #[cfg(any(feature = "compute_advice", not(target_arch = "riscv64")))]
+    #[cfg(any(
+        feature = "portable",
+        not(feature = "advice-tape"),
+        feature = "compute_advice",
+        not(target_arch = "riscv64")
+    ))]
     #[inline]
     fn slot_impl(&self, digest: &B256) -> u64 {
         match self.index.get(digest) {

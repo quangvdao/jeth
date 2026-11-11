@@ -4,13 +4,23 @@ version.workspace = true
 edition.workspace = true
 
 [features]
+default = ["advice-tape"]
+advice-tape = ["dep:jolt"]
+# Run witness lookup and arena sizing directly, without guest-specific tape IO.
+# Bare-metal RISC-V without A also supplies software atomics and requires one
+# hart with no interrupts, threads, or other concurrent memory accesses.
+portable = ["zeth-mpt/portable"]
 std = []
 # Host-only state-touch census (`jeth touches`): counting DB wrapper + opcode
 # inspector around the same validation loop. Never enabled by the guest.
 census = ["std"]
 code-library = []
 # Deferred tx, precompile, and authorization recovery using the secp256k1 inlines.
-secp-inline = ["dep:jolt-inlines-secp256k1", "alloy-consensus/crypto-backend"]
+secp-inline = [
+  "advice-tape",
+  "dep:jolt-inlines-secp256k1",
+  "alloy-consensus/crypto-backend",
+]
 # SHA256 (0x02) precompile on the Jolt SHA-256 inline (guest builds only; the native build keeps
 # revm's sha2 crate so run-native stays the independent reference).
 sha2-inline = ["secp-inline", "dep:jolt-inlines-sha2"]
@@ -74,7 +84,9 @@ revm-state.workspace = true
 
 # bn254 G1 GLV scalar multiplication for the ecmul precompile (src/bn254.rs):
 # the registry 0.5 crates revm-precompile's arkworks backend already compiles.
-ark-bn254 = { version = "0.5.0", default-features = false, features = ["curve"] }
+ark-bn254 = { version = "0.5.0", default-features = false, features = [
+  "curve",
+] }
 ark-ec = { version = "0.5.0", default-features = false }
 ark-ff = { version = "0.5.0", default-features = false }
 
@@ -90,7 +102,7 @@ serde.workspace = true
 # native builds never touch jolt-sdk — the native gate calls advice bodies
 # directly (see src/advice.rs build matrix).
 [target.'cfg(target_arch = "riscv64")'.dependencies]
-jolt = { package = "jolt-sdk", git = "https://github.com/a16z/jolt", rev = "8e536f199735ac8187156aa589ed1387722a079a", default-features = false }
+jolt = { package = "jolt-sdk", git = "https://github.com/a16z/jolt", rev = "8e536f199735ac8187156aa589ed1387722a079a", default-features = false, optional = true }
 
 [build-dependencies]
 # Recomputes the code-library id over the embedded artifacts.

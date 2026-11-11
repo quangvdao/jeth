@@ -31,38 +31,26 @@ resolver = "2"
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = [
-    "-Zunstable-options",
-    "--generate-link-to-definition",
-    "--show-type-layout",
+  "-Zunstable-options",
+  "--generate-link-to-definition",
+  "--show-type-layout",
 ]
 
 [features]
-arbitrary = [
-    "std",
-    "dep:arbitrary",
-    "dep:rand",
-    "alloy-primitives/arbitrary",
-]
-borsh = [
-    "dep:borsh",
-    "alloy-primitives/borsh",
-]
+# The embedding guest supplies the secp256k1 recovery hook.
+jolt-inline = []
+arbitrary = ["std", "dep:arbitrary", "dep:rand", "alloy-primitives/arbitrary"]
+borsh = ["dep:borsh", "alloy-primitives/borsh"]
 default = ["std"]
-k256 = [
-    "alloy-primitives/k256",
-    "dep:k256",
-]
-serde = [
-    "dep:serde",
-    "alloy-primitives/serde",
-]
+k256 = ["alloy-primitives/k256", "dep:k256"]
+serde = ["dep:serde", "alloy-primitives/serde"]
 serde-bincode-compat = ["serde_with"]
 std = [
-    "alloy-primitives/std",
-    "alloy-rlp/std",
-    "serde?/std",
-    "thiserror/std",
-    "borsh?/std",
+  "alloy-primitives/std",
+  "alloy-rlp/std",
+  "serde?/std",
+  "thiserror/std",
+  "borsh?/std",
 ]
 
 [lib]
@@ -102,10 +90,7 @@ optional = true
 
 [dependencies.serde]
 version = "1.0"
-features = [
-    "derive",
-    "alloc",
-]
+features = ["derive", "alloc"]
 optional = true
 default-features = false
 

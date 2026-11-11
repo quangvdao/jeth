@@ -11,7 +11,7 @@
 //! (`crates/core/src/advice.rs`), so this crate has no dependency on a jolt
 //! checkout and builds standalone.
 
-#[cfg(all(target_arch = "riscv64", target_os = "none"))]
+#[cfg(all(target_arch = "riscv64", target_os = "none", not(feature = "portable")))]
 extern "C" {
     pub(super) fn jeth_advice_write_u64(value: u64);
     pub(super) fn jeth_advice_read_u64() -> u64;
@@ -24,6 +24,7 @@ macro_rules! advice_u64 {
         #[cfg(all(
             target_arch = "riscv64",
             target_os = "none",
+            not(feature = "portable"),
             feature = "compute_advice"
         ))]
         {
@@ -35,13 +36,14 @@ macro_rules! advice_u64 {
         #[cfg(all(
             target_arch = "riscv64",
             target_os = "none",
+            not(feature = "portable"),
             not(feature = "compute_advice")
         ))]
         {
             // SAFETY: single-hart guest; the hook only reads the tape.
             unsafe { $crate::mpt::advice::jeth_advice_read_u64() }
         }
-        #[cfg(not(all(target_arch = "riscv64", target_os = "none")))]
+        #[cfg(not(all(target_arch = "riscv64", target_os = "none", not(feature = "portable"))))]
         {
             $body
         }
@@ -51,12 +53,12 @@ macro_rules! advice_u64 {
 /// 1-row `VirtualAssertEQ` on the Jolt guest, `assert_eq!` natively.
 macro_rules! advice_assert_eq {
     ($a:expr, $b:expr) => {{
-        #[cfg(all(target_arch = "riscv64", target_os = "none"))]
+        #[cfg(all(target_arch = "riscv64", target_os = "none", not(feature = "portable")))]
         {
             // SAFETY: the hook is a pure assertion on two register values.
             unsafe { $crate::mpt::advice::jeth_advice_assert_eq_u64($a, $b) }
         }
-        #[cfg(not(all(target_arch = "riscv64", target_os = "none")))]
+        #[cfg(not(all(target_arch = "riscv64", target_os = "none", not(feature = "portable"))))]
         {
             assert_eq!($a, $b)
         }
