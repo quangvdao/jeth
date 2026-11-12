@@ -13,18 +13,31 @@
 
 extern crate alloc;
 
+#[cfg(all(feature = "custom0-keccak", feature = "jolt-runtime"))]
+compile_error!("custom0-keccak requires --no-default-features and cannot use jolt-runtime");
+#[cfg(all(feature = "custom0-keccak", not(target_arch = "riscv64")))]
+compile_error!("custom0-keccak requires a riscv64 target");
+
 // Guest-only shims. Their native differential tests live in the standalone
 // `native-tests` crate (`cargo test --manifest-path
 // crates/guest/native-tests/Cargo.toml`), which includes these files by path.
-#[cfg(feature = "guest")]
+#[cfg(any(
+    feature = "guest",
+    all(feature = "custom0-keccak", target_arch = "riscv64")
+))]
 mod keccak;
 #[cfg(feature = "guest")]
 mod mem;
+#[cfg(any(
+    feature = "guest",
+    all(feature = "custom0-keccak", target_arch = "riscv64")
+))]
+mod word;
 
 #[cfg(feature = "jolt-runtime")]
 use jeth_core::{BlockInput, ValidationResult};
 
-/// Validate JEF input with software cryptography and direct witness lookup.
+/// Validate JEF input with direct witness lookup and the selected cryptography.
 /// The input backing allocation must remain valid throughout validation.
 #[cfg(feature = "portable")]
 pub fn validate_portable(bytes: &'static [u8]) -> jeth_core::ValidationResult {
@@ -177,7 +190,7 @@ pub static mut KECCAK_PERMS: u64 = 0;
 pub static mut KECCAK_UNALIGNED: u64 = 0;
 
 /// alloy-primitives (feature "native-keccak") declares this extern and calls it
-/// for every keccak256. Routes to the Jolt Keccak-f[1600] inlines (opcode 0x0B);
+/// for every keccak256. Selects the configured Keccak-f[1600] instruction encoding;
 /// the word-wise sponge driver lives in `keccak.rs`.
 ///
 /// `#[inline(never)]`: keeps the shim one out-of-line body. Its misaligned
@@ -185,11 +198,14 @@ pub static mut KECCAK_UNALIGNED: u64 = 0;
 /// neighbourhood; inlined into a caller whose surrounding stores LTO can see,
 /// that RMW would become a fusion candidate instead of the volatile sequence
 /// the containing-word argument in `keccak.rs` is made for.
-#[cfg(feature = "guest")]
+#[cfg(any(
+    feature = "guest",
+    all(feature = "custom0-keccak", target_arch = "riscv64")
+))]
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn native_keccak256(bytes: *const u8, len: usize, output: *mut u8) {
-    #[cfg(feature = "keccak-census")]
+    #[cfg(all(feature = "guest", feature = "keccak-census"))]
     {
         KECCAK_CALLS += 1;
         KECCAK_BYTES += len as u64;

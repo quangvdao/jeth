@@ -6,7 +6,11 @@ publish = false
 
 [workspace]
 
+[features]
+custom0-keccak = ["dep:jeth-guest", "jeth-guest/custom0-keccak"]
+
 [dependencies]
+jeth-guest = { path = "../guest", default-features = false, optional = true }
 jeth-core = { path = "../core", default-features = false, features = [
   "portable",
   "code-library",

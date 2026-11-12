@@ -1,12 +1,16 @@
-//! `native_keccak256` core for the Jolt guest: alloy's `native-keccak` hook,
-//! lowered onto the two Keccak-f[1600] inlines of `jolt-inlines-keccak256`
-//! (opcode 0x0B, funct7 1): funct3 0 permutes the 25 lanes at `rs1`
-//! (`Keccak256Permutation`); funct3 1 first XORs the 17 rate lanes at `rs2`
-//! into them (`Keccak256AbsorbPermutation`, `sdk.rs:179`
-//! `keccak256_absorb_permute`). The absorb variant costs 34 more trace rows
-//! (17 `LD` + 17 `XOR`), so it is used only where it is cheapest: whole,
-//! 8-aligned middle blocks read straight from the caller's memory. The first
-//! block of every message is written into the still-zero rate lanes, and the
+//! Keccak-256 sponge for alloy's `native-keccak` hook.
+//!
+//! The `guest` encoding uses the two `jolt-inlines-keccak256` instructions
+//! (opcode 0x0B, funct7 1): funct3 0 permutes the 25 lanes at `rs1`, and
+//! funct3 1 first XORs the 17 rate lanes at `rs2`. The absorb variant costs
+//! 34 more trace rows (17 `LD` + 17 `XOR`).
+//!
+//! The portable `custom0-keccak` encoding uses words 0xc200000b and
+//! 0xc200100b, with rd = rs1 = rs2 = x0 and implicit pointers in a0 (state)
+//! and a1 (message). The memory accesses retain the same alignment contract.
+//!
+//! Whole, 8-aligned middle blocks use absorb-permute directly on the caller's
+//! memory. The first block is written into the still-zero rate lanes, and the
 //! padded final block is XORed lane-wise into the state by the shim itself;
 //! both then run the plain permutation.
 //!
@@ -32,9 +36,14 @@
 //! native tests (`crates/guest/native-tests`), whose buffers carry word-sized
 //! slack on both ends so the same accesses stay inside the allocation.
 
-use super::mem::{load_word, store_word};
+use super::word::{load_word, store_word};
 use core::mem::MaybeUninit;
 use core::ptr::{read_volatile, write_volatile};
+
+#[cfg(feature = "custom0-keccak")]
+const KECCAKF_WORD: u32 = 0xc200_000b;
+#[cfg(feature = "custom0-keccak")]
+const KECCAKF_XOR_WORD: u32 = 0xc200_100b;
 
 const RATE_BYTES: usize = 136;
 const RATE_WORDS: usize = RATE_BYTES / 8;
@@ -44,7 +53,14 @@ const DIGEST_WORDS: usize = 4;
 /// Keccak-f[1600] on the 25 lanes at `state` (8-aligned).
 #[inline(always)]
 unsafe fn permute(state: *mut u64) {
-    #[cfg(feature = "guest")]
+    #[cfg(all(feature = "custom0-keccak", target_arch = "riscv64"))]
+    core::arch::asm!(
+        ".word {instruction}",
+        instruction = const KECCAKF_WORD,
+        in("a0") state,
+        options(nostack)
+    );
+    #[cfg(all(feature = "guest", not(feature = "custom0-keccak")))]
     {
         use jolt_inlines_keccak256::{INLINE_OPCODE, KECCAK256_FUNCT3, KECCAK256_FUNCT7};
         // `Keccak256Permutation` (sequence_builder.rs): rs1 = state, rs2 unused.
@@ -57,12 +73,18 @@ unsafe fn permute(state: *mut u64) {
             options(nostack)
         );
     }
-    #[cfg(not(feature = "guest"))]
+    #[cfg(not(any(
+        feature = "guest",
+        all(feature = "custom0-keccak", target_arch = "riscv64")
+    )))]
     f1600(state);
 }
 
 /// Native reference permutation for the differential tests.
-#[cfg(not(feature = "guest"))]
+#[cfg(not(any(
+    feature = "guest",
+    all(feature = "custom0-keccak", target_arch = "riscv64")
+)))]
 unsafe fn f1600(state: *mut u64) {
     keccak::Keccak::new().with_f1600(|f| f(&mut *state.cast::<[u64; STATE_WORDS]>()));
 }
@@ -71,9 +93,20 @@ unsafe fn f1600(state: *mut u64) {
 /// Both pointers 8-aligned and non-overlapping.
 #[inline(always)]
 unsafe fn absorb_permute(state: *mut u64, block: *const u64) {
-    #[cfg(feature = "guest")]
+    #[cfg(all(feature = "custom0-keccak", target_arch = "riscv64"))]
+    core::arch::asm!(
+        ".word {instruction}",
+        instruction = const KECCAKF_XOR_WORD,
+        in("a0") state,
+        in("a1") block,
+        options(nostack)
+    );
+    #[cfg(all(feature = "guest", not(feature = "custom0-keccak")))]
     jolt_inlines_keccak256::keccak256_absorb_permute(state, block.cast());
-    #[cfg(not(feature = "guest"))]
+    #[cfg(not(any(
+        feature = "guest",
+        all(feature = "custom0-keccak", target_arch = "riscv64")
+    )))]
     {
         for i in 0..RATE_WORDS {
             *state.add(i) ^= *block.add(i);
@@ -329,6 +362,16 @@ mod tests {
 
     fn random_bytes(rng: &mut u64, len: usize) -> Vec<u8> {
         (0..len).map(|_| xorshift(rng) as u8).collect()
+    }
+
+    #[cfg(feature = "custom0-keccak")]
+    #[test]
+    fn custom0_instruction_words_match_the_zero_register_encoding() {
+        assert_eq!(super::KECCAKF_WORD.to_le_bytes(), [0x0b, 0x00, 0x00, 0xc2]);
+        assert_eq!(
+            super::KECCAKF_XOR_WORD.to_le_bytes(),
+            [0x0b, 0x10, 0x00, 0xc2]
+        );
     }
 
     #[test]

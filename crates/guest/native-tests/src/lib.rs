@@ -6,3 +6,6 @@
 mod keccak;
 #[path = "../../src/mem.rs"]
 mod mem;
+
+#[path = "../../src/word.rs"]
+mod word;

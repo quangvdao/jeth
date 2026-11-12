@@ -14,6 +14,8 @@ default = ["keccak-census", "jolt-runtime"]
 guest = ["jeth-core/code-library", "jolt-runtime"]
 # Portable library entry point; select with --no-default-features.
 portable = ["jeth-core/portable", "jeth-core/code-library"]
+# custom-0 words 0xc200000b / 0xc200100b; state in a0, message in a1.
+custom0-keccak = ["portable", "alloy-primitives/native-keccak"]
 jolt-runtime = [
   "dep:jolt",
   "dep:jolt-inlines-keccak256",

@@ -1085,6 +1085,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "jeth-core",
+ "jeth-guest",
  "linked_list_allocator",
  "postcard",
 ]
@@ -1496,6 +1497,15 @@ dependencies = [
  "stateless",
  "tries",
  "zeth-mpt",
+]
+
+[[package]]
+name = "jeth-guest"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "critical-section",
+ "jeth-core",
 ]
 
 [[package]]

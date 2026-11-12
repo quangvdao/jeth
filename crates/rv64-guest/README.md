@@ -20,3 +20,5 @@ CARGO_TARGET_DIR=target/rv64-guest crates/rv64-guest/build.sh guest.elf
 ```
 
 `build.sh` remaps absolute source paths, so the ELF is byte-identical from any checkout with the same toolchain.
+
+To use the custom-0 Keccak instructions, pass `--custom0-keccak` before the output path. This enables only `alloy-primitives/native-keccak` and the portable sponge shim. The two words are `0xc200000b` (25-lane permutation) and `0xc200100b` (XOR 17 message lanes, then permute), with pointers in `a0` and `a1` and zero instruction register fields. All shim memory accesses remain 8-aligned.

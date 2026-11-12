@@ -7,6 +7,8 @@ use core::{
 };
 use critical_section::{Impl, RawRestoreState};
 use jeth_core::{decode_container, recover_block, validate_recovered};
+#[cfg(feature = "custom0-keccak")]
+use jeth_guest as _;
 use linked_list_allocator::Heap;
 
 const INPUT: usize = 0x7000_0000;
