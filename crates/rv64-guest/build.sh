@@ -2,9 +2,9 @@
 set -euo pipefail
 guest_sources=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 : "${CARGO_TARGET_DIR:?set CARGO_TARGET_DIR}"
-guest_features=()
+guest_features=(--no-default-features)
 if [[ ${1:-} == --custom0-keccak ]]; then
-    guest_features=(--features custom0-keccak)
+    guest_features+=(--features custom0-keccak)
     shift
 fi
 if (( $# != 1 )); then
