@@ -57,6 +57,8 @@ extern "C" fn guest_main() -> ! {
     unsafe {
         (&mut *ALLOCATOR.0.get()).init(core::ptr::addr_of!(__stack_top).cast_mut(), 1536 << 20)
     };
+    crate::secp_software::install();
+
     // SAFETY: the harness maps this immutable input aperture for the entire run.
     let stream = unsafe { core::slice::from_raw_parts(INPUT as *const u8, 128 << 20) };
     let (bytes, _) = postcard::take_from_bytes::<&[u8]>(stream).expect("input framing");
