@@ -3,6 +3,9 @@
 #[cfg(target_arch = "riscv64")]
 mod runtime;
 
+#[cfg(any(target_arch = "riscv64", test))]
+mod block_allocator;
+
 #[cfg(target_arch = "riscv64")]
 extern crate alloc;
 #[cfg(any(target_arch = "riscv64", test))]

@@ -11,7 +11,11 @@ A bare-metal RV64IM guest that validates one Ethereum block with `jeth-core`'s p
 | `0x7800_0050` | panic flag |
 | `0x7800_0058` | termination flag |
 
-The heap (1.5 GiB) starts above a 32 MiB stack placed after the program image.
+The 1.5 GiB heap starts above the 32 MiB stack. The allocator reserves space
+from this arena until the guest exits. It can resize the most recent allocation
+in place and does not reclaim freed blocks. If an allocation does not fit,
+the allocator returns null. Infallible allocations then set the panic and
+termination flags through the allocation-error handler.
 
 Build with the pinned toolchain in `rust-toolchain.toml` and its `rust-src`
 component. The signature backend also needs Clang with RISC-V target support

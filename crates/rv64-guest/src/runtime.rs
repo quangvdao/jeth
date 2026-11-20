@@ -1,42 +1,29 @@
+use crate::block_allocator::BlockAllocator;
 use core::{
-    alloc::{GlobalAlloc, Layout},
+    alloc::Layout,
     arch::{asm, global_asm},
-    cell::UnsafeCell,
+    mem::MaybeUninit,
     panic::PanicInfo,
-    ptr::{write_volatile, NonNull},
+    ptr::{addr_of_mut, write_volatile},
 };
 use critical_section::{Impl, RawRestoreState};
 use jeth_core::{decode_container, recover_block, validate_recovered};
 #[cfg(feature = "custom0-keccak")]
 use jeth_guest as _;
-use linked_list_allocator::Heap;
 
 const INPUT: usize = 0x7000_0000;
 const OUTPUT: usize = 0x7800_0000;
 const PHASE: usize = OUTPUT + 72;
 const PANIC: usize = OUTPUT + 80;
 const TERMINATION: usize = PANIC + 8;
+const HEAP_CAPACITY: usize = 1536 << 20;
 extern "C" {
-    static __stack_top: u8;
+    // The linker supplies the base and the runtime maps this writable region.
+    static mut __stack_top: [MaybeUninit<u8>; HEAP_CAPACITY];
 }
 
-struct Allocator(UnsafeCell<Heap>);
-// SAFETY: _start starts one hart without interrupts or concurrent callbacks.
-unsafe impl Sync for Allocator {}
-unsafe impl GlobalAlloc for Allocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // SAFETY: the single hart has exclusive access to the initialized heap.
-        unsafe { &mut *self.0.get() }
-            .allocate_first_fit(layout)
-            .map_or(core::ptr::null_mut(), NonNull::as_ptr)
-    }
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        // SAFETY: GlobalAlloc supplies an allocation from this single-hart heap.
-        unsafe { (&mut *self.0.get()).deallocate(NonNull::new_unchecked(pointer), layout) };
-    }
-}
 #[global_allocator]
-static ALLOCATOR: Allocator = Allocator(UnsafeCell::new(Heap::empty()));
+static ALLOCATOR: BlockAllocator = BlockAllocator::new();
 
 global_asm!(
     ".section .text.start,\"ax\",@progbits",
@@ -54,9 +41,7 @@ global_asm!(
 #[no_mangle]
 extern "C" fn guest_main() -> ! {
     // SAFETY: the linker places a 1.5 GiB heap region above the stack top.
-    unsafe {
-        (&mut *ALLOCATOR.0.get()).init(core::ptr::addr_of!(__stack_top).cast_mut(), 1536 << 20)
-    };
+    unsafe { ALLOCATOR.init(addr_of_mut!(__stack_top).cast(), HEAP_CAPACITY) };
     crate::secp_software::install();
 
     // SAFETY: the harness maps this immutable input aperture for the entire run.
