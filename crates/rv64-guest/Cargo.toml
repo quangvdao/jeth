@@ -10,13 +10,18 @@ publish = false
 custom0-keccak = ["dep:jeth-guest", "jeth-guest/custom0-keccak"]
 
 [dependencies]
+alloy-consensus = { version = "=2.3.0", default-features = false, features = ["crypto-backend", "k256"] }
+alloy-eip7702 = { version = "=0.6.3", default-features = false, features = ["jolt-inline"] }
+alloy-primitives = { version = "=1.6.1", default-features = false }
+k256 = { version = "=0.13.4", default-features = false, features = ["ecdsa"] }
+revm-precompile = { version = "=34.0.0", default-features = false }
+secp256k1 = { version = "=0.30.0", default-features = false, features = ["recovery"] }
 jeth-guest = { path = "../guest", default-features = false, optional = true }
 jeth-core = { path = "../core", default-features = false, features = [
   "portable",
   "code-library",
   "guest-instrument",
 ] }
-linked_list_allocator = { version = "=0.10.6", default-features = false }
 critical-section = "1.2"
 postcard = { version = "1.0.8", default-features = false }
 
