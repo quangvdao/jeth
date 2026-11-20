@@ -1093,6 +1093,7 @@ dependencies = [
  "linked_list_allocator",
  "postcard",
  "revm-precompile",
+ "secp256k1",
 ]
 
 [[package]]

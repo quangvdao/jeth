@@ -16,6 +16,10 @@ export CARGO_INCREMENTAL=0
 repo_root=$(cd -- "$guest_sources/../.." && pwd)
 cargo_home=${CARGO_HOME:-$HOME/.cargo}
 sysroot=$(cd -- "$guest_sources" && rustc --print sysroot)
+# Compile libsecp256k1 for the same bare-metal RV64IM ABI as the Rust guest.
+export CC_riscv64imac_unknown_none_elf="${CC_riscv64imac_unknown_none_elf:-clang}"
+export AR_riscv64imac_unknown_none_elf="${AR_riscv64imac_unknown_none_elf:-llvm-ar}"
+export CFLAGS_riscv64imac_unknown_none_elf="${CFLAGS_riscv64imac_unknown_none_elf:+$CFLAGS_riscv64imac_unknown_none_elf }--target=riscv64-unknown-none-elf -march=rv64im -mabi=lp64 -mcmodel=medany -ffile-prefix-map=$repo_root=/jeth -ffile-prefix-map=$cargo_home=/cargo"
 # Remap absolute source paths so the ELF is identical from any checkout.
 remap="--remap-path-prefix=$repo_root=/jeth --remap-path-prefix=$cargo_home=/cargo --remap-path-prefix=$sysroot=/rust"
 guest_flags="$remap -C panic=abort -C target-feature=+m,-a,-c,-zca,-zaamo,-zalrsc,-f,-d,-zicsr,+unaligned-scalar-mem -C relocation-model=static -C code-model=medium -C link-arg=-T${guest_sources}/link.ld -C link-arg=--no-relax -C link-arg=--nmagic --cfg sha2_backend=\"soft\""

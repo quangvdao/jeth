@@ -4,19 +4,14 @@ use alloc::sync::Arc;
 use alloy_consensus::crypto::install_default_provider;
 use alloy_consensus::crypto::{CryptoProvider, RecoveryError};
 use alloy_primitives::{keccak256, Address, B256};
-use k256::{
-    ecdsa::{signature::hazmat::PrehashVerifier, RecoveryId, Signature, VerifyingKey},
-    elliptic_curve::{
-        bigint::CheckedAdd,
-        ops::{Invert, LinearCombination, Reduce},
-        point::DecompressPoint,
-        Curve, FieldBytesEncoding, PrimeField,
-    },
-    AffinePoint, ProjectivePoint, Scalar, Secp256k1, U256,
-};
+use k256::ecdsa::Signature;
 #[cfg(target_arch = "riscv64")]
 use revm_precompile::install_crypto;
 use revm_precompile::{Crypto, PrecompileHalt};
+
+// Ethereum signatures and their messages are public, so recovery and
+// verification can use libsecp256k1's variable-time routines.
+mod vartime;
 
 #[derive(Debug)]
 struct SoftwareSecp;
@@ -44,13 +39,12 @@ impl CryptoProvider for SoftwareSecp {
         signature: &[u8; 64],
         msg: &[u8; 32],
     ) -> Result<Address, RecoveryError> {
-        let vk = VerifyingKey::from_sec1_bytes(key).map_err(|_| RecoveryError::new())?;
         let sig = Signature::from_slice(signature).map_err(|_| RecoveryError::new())?;
         let sig = sig.normalize_s().unwrap_or(sig);
-        vk.verify_prehash(msg, &sig)
-            .map_err(|_| RecoveryError::new())?;
-        let encoded = vk.to_encoded_point(false);
-        Ok(Address::from_word(keccak256(&encoded.as_bytes()[1..])))
+        if !vartime::verify(key, msg, &sig) {
+            return Err(RecoveryError::new());
+        }
+        Ok(Address::from_word(hash_key(key)))
     }
 }
 
@@ -80,39 +74,7 @@ fn recover_key(compact: &[u8], msg: &[u8; 32], mut recid: u8) -> Option<[u8; 65]
         recid ^= 1;
     }
 
-    let recovery_id = RecoveryId::from_byte(recid)?;
-    let vk = recover_normalized(msg, &signature, recovery_id)?;
-    vk.to_encoded_point(false).as_bytes().try_into().ok()
-}
-
-fn recover_normalized(
-    msg: &[u8; 32],
-    signature: &Signature,
-    recovery_id: RecoveryId,
-) -> Option<VerifyingKey> {
-    // Matches ecdsa 0.16.9 recovery for fixed-length prehashes and normalized s.
-    // For a nonidentity Q, verification reconstructs R since s is nonzero
-    // and rQ = sR - zG. R was decompressed with x = r or x = r + n.
-    let (r, s) = signature.split_scalars();
-    let z = <Scalar as Reduce<U256>>::reduce_bytes(msg.into());
-    let mut x = r.to_repr();
-    if recovery_id.is_x_reduced() {
-        let restored = <U256 as FieldBytesEncoding<Secp256k1>>::decode_field_bytes(&x)
-            .checked_add(&Secp256k1::ORDER);
-        x = FieldBytesEncoding::<Secp256k1>::encode_field_bytes(&Option::<U256>::from(restored)?);
-    }
-    let r_point = Option::<AffinePoint>::from(AffinePoint::decompress(
-        &x,
-        u8::from(recovery_id.is_y_odd()).into(),
-    ))?;
-    let r_inv = *Invert::invert(&r);
-    let key = ProjectivePoint::lincomb(
-        &ProjectivePoint::GENERATOR,
-        &-(r_inv * z),
-        &r_point.into(),
-        &(r_inv * *s),
-    );
-    VerifyingKey::from_affine(key.into()).ok()
+    vartime::recover(&signature, msg, recid)
 }
 
 // The vendored EIP-7702 hook expects the same padded address as ECRECOVER.
@@ -139,8 +101,9 @@ unsafe extern "C" fn jeth_ecrecover_prehash(
 mod tests {
     use super::*;
     use k256::{
-        ecdsa::SigningKey,
+        ecdsa::{RecoveryId, SigningKey, VerifyingKey},
         elliptic_curve::{sec1::ToEncodedPoint, PrimeField},
+        AffinePoint,
     };
 
     fn compact(r: [u8; 32], s: [u8; 32]) -> [u8; 64] {
@@ -161,7 +124,7 @@ mod tests {
         let signer = SigningKey::from_slice(&scalar(31)).unwrap();
         let public = signer.verifying_key().to_encoded_point(false);
         let public: &[u8; 65] = public.as_bytes().try_into().unwrap();
-        let msg = [23; 32];
+        let msg = [0xff; 32];
         let (signature, id) = signer.sign_prehash_recoverable(&msg).unwrap();
         let id = id.to_byte();
         let (r, s) = signature.split_scalars();
@@ -171,7 +134,24 @@ mod tests {
         assert_eq!(recover_key(&high, &msg, id ^ 1).as_ref(), Some(public));
 
         let address = Address::from_word(hash_key(public));
-        for signature in [low, high] {
+        let mut expected_evm = [0; 32];
+        expected_evm[12..].copy_from_slice(address.as_slice());
+        let mut alloy_signature = [0; 65];
+        for (signature, parity) in [(low, id), (high, id ^ 1)] {
+            assert_eq!(
+                SoftwareSecp
+                    .secp256k1_ecrecover(&signature, parity, &msg)
+                    .unwrap(),
+                expected_evm
+            );
+            alloy_signature[..64].copy_from_slice(&signature);
+            alloy_signature[64] = parity;
+            assert_eq!(
+                SoftwareSecp
+                    .recover_signer_unchecked(&alloy_signature, &msg)
+                    .unwrap(),
+                address
+            );
             assert_eq!(
                 SoftwareSecp
                     .verify_and_compute_signer_unchecked(public, &signature, &msg)
